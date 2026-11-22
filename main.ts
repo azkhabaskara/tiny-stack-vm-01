@@ -13,6 +13,8 @@ function run(p: Buffer, inp: Buffer): [Buffer, number] {
   let sp = 0, cp = 0, pc = 0, steps = 0, ip = 0;
   const n = p.length;
   const done = (e: number): [Buffer, number] => [Buffer.from(out), e];
+  // Signed 16-bit little-endian immediate at `at` (hoisted: no closure per step).
+  const off16 = (at: number) => ((p[at + 1] | (p[at + 2] << 8)) << 16) >> 16;
   while (true) {
     if (steps >= 1000000) return done(10);
     if (pc < 0 || pc >= n) return done(9);
@@ -37,7 +39,6 @@ function run(p: Buffer, inp: Buffer): [Buffer, number] {
     if (sp - need + push > 256) return done(3);
     steps++;
     const nx = pc + 1 + imm;
-    const off16 = () => ((p[pc + 1] | (p[pc + 2] << 8)) << 16) >> 16;
     switch (op) {
       case 0x00: return done(0);
       case 0x01: s[sp++] = (p[pc + 1] << 24) >> 24; break;
@@ -65,9 +66,9 @@ function run(p: Buffer, inp: Buffer): [Buffer, number] {
       case 0x20: { const b = s[--sp]; s[sp - 1] = s[sp - 1] === b ? 1 : 0; break; }
       case 0x21: { const b = s[--sp]; s[sp - 1] = s[sp - 1] < b ? 1 : 0; break; }
       case 0x22: { const b = s[--sp]; s[sp - 1] = (s[sp - 1] >>> 0) < (b >>> 0) ? 1 : 0; break; }
-      case 0x30: pc = nx + off16(); continue;
-      case 0x31: { const v = s[--sp]; pc = v === 0 ? nx + off16() : nx; continue; }
-      case 0x32: { const v = s[--sp]; pc = v !== 0 ? nx + off16() : nx; continue; }
+      case 0x30: { const o = off16(pc); pc = nx + o; continue; }
+      case 0x31: { const v = s[--sp], o = off16(pc); pc = v === 0 ? nx + o : nx; continue; }
+      case 0x32: { const v = s[--sp], o = off16(pc); pc = v !== 0 ? nx + o : nx; continue; }
       case 0x33: if (cp >= 64) return done(7); c[cp++] = nx; pc = p[pc + 1] | (p[pc + 2] << 8); continue;
       case 0x34: if (cp === 0) return done(8); pc = c[--cp]; continue;
       case 0x40: { const a = s[sp - 1]; if (a < 0 || a > 255) return done(6); s[sp - 1] = m[a]; break; }
